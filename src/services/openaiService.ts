@@ -1,10 +1,16 @@
-import OpenAI from 'openai';
+import { createClient } from '@supabase/supabase-js';
+import { OpenAI } from 'openai';
 import { supabaseLogger } from '../lib/supabase';
 import { ChatCompletionMessageParam } from 'openai/resources/chat';
 
-// OpenAI 클라이언트 초기화
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const openaiApiKey = process.env.OPENAI_API_KEY || '';
+
+export const supabase = createClient(supabaseUrl, supabaseKey);
+export const openai = new OpenAI({
+  apiKey: openaiApiKey,
+  dangerouslyAllowBrowser: true
 });
 
 // 학습 도우미 응답 타입
@@ -195,4 +201,64 @@ const extractResources = (response: string | null): string[] => {
   }
   
   return resources;
+};
+
+export interface Message {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export const generateResponse = async (messages: Message[]) => {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      })),
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error('Error generating response:', error);
+    throw error;
+  }
+};
+
+export const saveConversation = async (userId: string, messages: Message[]) => {
+  try {
+    const { data, error } = await supabase
+      .from('conversations')
+      .insert([
+        {
+          user_id: userId,
+          messages: messages,
+          created_at: new Date().toISOString()
+        }
+      ]);
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error saving conversation:', error);
+    throw error;
+  }
+};
+
+export const getConversations = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error getting conversations:', error);
+    throw error;
+  }
 }; 
